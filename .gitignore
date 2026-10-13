@@ -15,3 +15,7 @@ node_modules/
 # Per-run debug output (regenerated on every testmd/testrun execution)
 .testmuai/tests/output-*/
 
+# Generated proof dashboard — rebuilt every run by scripts/render-assurance-dashboard.js,
+# uploaded as a CI artifact instead of committed
+/assurance-report.html
+

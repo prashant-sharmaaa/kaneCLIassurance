@@ -76,6 +76,19 @@ jobs:
         if: always()
         run: node scripts/render-assurance-report.js testrun-output.ndjson
 
+      - name: Build assurance proof dashboard (HTML)
+        if: always()
+        run: node scripts/render-assurance-dashboard.js testrun-output.ndjson
+
+      - name: Upload assurance dashboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: assurance-dashboard-${{ github.run_number }}
+          path: assurance-report.html
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Upload evidence packs
         if: always()
         uses: actions/upload-artifact@v4
