@@ -50,9 +50,11 @@ The workflow at [`.github/workflows/assurance.yml`](./.github/workflows/assuranc
 | `KANE_CLI_USERNAME` | Your TestmuAI username |
 | `KANE_CLI_ACCESS_KEY` | Your TestmuAI access key (Settings → Keys on the TestmuAI dashboard) |
 
-**Trigger it:** push to `main`, or run manually from the Actions tab (`workflow_dispatch`). It also runs on a weekly schedule (Monday 03:00 UTC) as a regression check.
+**Trigger it:** push to `main` (when `.testmuai/tests/**` changes), or run manually from the Actions tab (`workflow_dispatch`).
 
-**Output:** a pass/fail per test, a `coverage-report-<run>` artifact (the same `cover` / `cover gaps` report shown above), and an `evidence-packs-<run>` artifact with every screenshot/log for debugging failures.
+**Output:** the job summary (and log) renders a full **Use Case → Acceptance Criteria → Test → Result** report — see [`scripts/render-assurance-report.js`](./scripts/render-assurance-report.js) — so a reviewer can follow exactly what was checked and what passed/failed without reading raw kane-cli output. Plus two artifacts: `evidence-packs-<run>` (every screenshot/log/root-cause record, for debugging a failure) and `testrun-output-<run>` (the raw NDJSON, for scripting).
+
+**Preview a requirements doc you haven't committed yet:** `workflow_dispatch` takes an optional `requirements_url` input. When set, the run ingests and extracts that doc into a throwaway store and prints the proposed use-cases/ACs to the job summary — it does **not** design or run new tests automatically; promoting anything from that preview into the suite still needs a human to run `context review` + `design tests` locally (the two checkpoints kane-cli always requires — see [Keeping this suite current](#keeping-this-suite-current)).
 
 ### Locally (for authoring/debugging one test, not the full batch)
 

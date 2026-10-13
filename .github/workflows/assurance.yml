@@ -1,15 +1,21 @@
 name: Core Wealth Hub Assurance Suite
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      requirements_url:
+        description: >
+          Optional: URL to a requirements doc (web page, Jira/Confluence/Linear issue, etc.)
+          not yet committed to this repo. When set, the run previews the use-cases/ACs kane-cli
+          would extract from it (logged + added to the job summary) — it does NOT design or run
+          new tests automatically; that still needs a human review/approve step done locally.
+        required: false
+        default: ''
   push:
     branches: [main]
     paths:
       - '.testmuai/tests/**'
       - '.github/workflows/assurance.yml'
-  schedule:
-    # Weekly regression, Monday 03:00 UTC
-    - cron: '0 3 * * 1'
 
 jobs:
   assurance:
@@ -33,25 +39,42 @@ jobs:
       - name: Authenticate kane-cli
         run: kane-cli login --username "${{ secrets.KANE_CLI_USERNAME }}" --access-key "${{ secrets.KANE_CLI_ACCESS_KEY }}"
 
+      - name: "Preview: extract use-cases from a requirements doc URL (optional input)"
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.requirements_url != '' }}
+        run: |
+          set -o pipefail
+          {
+            echo "## Requirements preview — ${{ github.event.inputs.requirements_url }}"
+            echo
+            echo "This is a preview only: the doc below was ingested and extracted into a"
+            echo "throwaway store for this run so you can see what kane-cli would propose."
+            echo "Nothing here was designed into tests or added to the suite — approving"
+            echo "use-cases and designing tests still needs a human running the assurance"
+            echo "flow locally (see README.md)."
+            echo
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          kane-cli context ingest "${{ github.event.inputs.requirements_url }}" --mode agent 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "### Proposed use-cases (unreviewed)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kane-cli context list --json --inferred 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run the assurance test suite
         id: testrun
         run: |
+          set -o pipefail
           kane-cli testrun run \
             --headless \
             --parallel 1 \
             --on-failure continue \
-            --name "CI run #${{ github.run_number }} (${{ github.sha }})"
+            --name "CI run #${{ github.run_number }} (${{ github.sha }})" \
+            | tee testrun-output.ndjson
 
-      - name: Generate coverage / assurance report
+      - name: Present assurance results (use-cases, ACs, tests, pass/fail)
         if: always()
-        run: |
-          {
-            echo "## Coverage — proof pack"
-            kane-cli cover
-            echo
-            echo "## Coverage — designed x proven, per use case"
-            kane-cli cover gaps
-          } | tee assurance-coverage-report.txt
+        run: node scripts/render-assurance-report.js testrun-output.ndjson
 
       - name: Upload evidence packs
         if: always()
@@ -62,10 +85,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Upload coverage report
+      - name: Upload raw run output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report-${{ github.run_number }}
-          path: assurance-coverage-report.txt
+          name: testrun-output-${{ github.run_number }}
+          path: testrun-output.ndjson
+          if-no-files-found: warn
           retention-days: 90

@@ -1,0 +1,70 @@
+{
+  "source": "bfsFile.md",
+  "use_cases": [
+    {
+      "id": "uc-1",
+      "title": "Log into the Core Wealth Hub portal",
+      "business_use_case": "Prerequisite for all other flows",
+      "acceptance_criteria": [
+        { "id": "ac-1", "title": "The Core Wealth Hub login page is presented at the documented URL https://core-wealth-hub.lovable.app/login." },
+        { "id": "ac-2", "title": "Submitting username `Admin` and password `admin` grants administrator access to the authenticated Core Wealth Hub portal." },
+        { "id": "ac-3", "title": "Submitting username `Admin` with an incorrect password does not grant authenticated Core Wealth Hub portal access." }
+      ],
+      "tests": ["t-1", "t-2"]
+    },
+    {
+      "id": "uc-2",
+      "title": "Complete applicant KYC registration",
+      "business_use_case": "Complete KYC Registration",
+      "acceptance_criteria": [
+        { "id": "ac-4", "title": "Completing KYC verification updates the loan profile's KYC status to \"Verified\"." },
+        { "id": "ac-5", "title": "A loan profile exposes a KYC Verification tab for KYC review." },
+        { "id": "ac-6", "title": "The KYC evidence set includes government-issued identification (ID/Passport)." },
+        { "id": "ac-7", "title": "The KYC evidence set includes proof of address." }
+      ],
+      "tests": ["t-3"]
+    },
+    {
+      "id": "uc-3",
+      "title": "Submit a personal loan application",
+      "business_use_case": "Submit Personal Loan Application",
+      "acceptance_criteria": [
+        { "id": "ac-8", "title": "The personal loan application workflow is available to administrators and authorized users acting on behalf of applicants." },
+        { "id": "ac-9", "title": "Submitting a completed personal loan application sends the application for review." },
+        { "id": "ac-10", "title": "The Loan Applications section provides a New Application entry point for starting a personal loan application." },
+        { "id": "ac-11", "title": "The application blocks successful submission when borrower details are omitted." },
+        { "id": "ac-12", "title": "The application blocks successful submission when the requested loan amount is omitted." },
+        { "id": "ac-13", "title": "The application blocks successful submission when loan tenure is omitted." },
+        { "id": "ac-14", "title": "The application blocks successful submission when income verification is omitted." },
+        { "id": "ac-15", "title": "The application blocks successful submission when employment information is omitted." },
+        { "id": "ac-16", "title": "An administrator can initiate a new personal loan application from Loan Applications by choosing New Application." },
+        { "id": "ac-17", "title": "An authorized user can initiate a new personal loan application from Loan Applications by choosing New Application." }
+      ],
+      "tests": ["t-4", "t-5", "t-6", "t-7", "t-8", "t-9", "t-10"]
+    },
+    {
+      "id": "uc-4",
+      "title": "Search for loan details",
+      "business_use_case": "Search for Loan Details",
+      "acceptance_criteria": [
+        { "id": "ac-18", "title": "The system provides a global search bar that administrators can use to locate existing loan files." },
+        { "id": "ac-19", "title": "The system provides a Loan Details tab that administrators can use to filter and review existing loan files." },
+        { "id": "ac-20", "title": "Loan-detail search supports applicant name as a search criterion." },
+        { "id": "ac-21", "title": "Loan-detail search supports application ID as a search criterion." },
+        { "id": "ac-22", "title": "Loan-detail search supports phone number as a search criterion." },
+        { "id": "ac-23", "title": "The current loan status search/filter control includes Pending as a supported value." },
+        { "id": "ac-24", "title": "The current loan status search/filter control includes Approved as a supported value." },
+        { "id": "ac-25", "title": "The current loan status search/filter control includes Rejected as a supported value." },
+        { "id": "ac-26", "title": "A located loan file exposes its application history for review." },
+        { "id": "ac-27", "title": "A located loan file exposes its current status for review." },
+        { "id": "ac-28", "title": "Applying the Pending status filter in the Loan Details tab shows only loan records whose current status is Pending." },
+        { "id": "ac-29", "title": "Applying the Approved status filter in the Loan Details tab shows only loan records whose current status is Approved." },
+        { "id": "ac-30", "title": "Applying the Rejected status filter in the Loan Details tab shows only loan records whose current status is Rejected." },
+        { "id": "ac-31", "title": "Searching from the global search bar by applicant name shows only loan records for the entered applicant name." },
+        { "id": "ac-32", "title": "Searching from the global search bar by application ID shows only the loan record for the entered application ID." },
+        { "id": "ac-33", "title": "Searching from the global search bar by phone number shows only loan records for the entered phone number." }
+      ],
+      "tests": ["t-11", "t-12", "t-13", "t-14", "t-15", "t-16"]
+    }
+  ]
+}
