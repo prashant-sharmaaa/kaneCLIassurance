@@ -2,14 +2,18 @@
 // Renders a human-readable Use Case -> AC -> Test -> Result report for the
 // GitHub Actions log + job summary, from the committed test suite and a
 // testrun NDJSON output file. Needs no kane-cli `.context/` store.
+//
+// Usage: node render-assurance-report.js <testrun-output.ndjson> [evidence-dir]
 
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const TESTS_DIR = path.join(REPO_ROOT, ".testmuai", "tests");
 const MANIFEST_PATH = path.join(REPO_ROOT, ".testmuai", "assurance-manifest.json");
-const ndjsonPath = process.argv[2]; // path to captured testrun stdout, optional
+const ndjsonPath = process.argv[2];
+const evidenceDir = process.argv[3] || path.join(REPO_ROOT, ".testmuai", "evidence");
 
 function parseTestFile(filePath) {
   const raw = fs.readFileSync(filePath, "utf8");
@@ -32,7 +36,8 @@ function parseTestFile(filePath) {
 }
 
 function loadResults(file) {
-  const results = {}; // file basename -> {status, duration_s}
+  // file basename -> {status, duration_s, test_id, source_execution_id}
+  const results = {};
   if (!file || !fs.existsSync(file)) return results;
   const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
   for (const line of lines) {
@@ -44,7 +49,13 @@ function loadResults(file) {
     }
     if (evt.type === "testrun_summary" && Array.isArray(evt.authored)) {
       for (const member of evt.authored) {
-        results[path.basename(member.path)] = { status: member.status };
+        const base = path.basename(member.path);
+        results[base] = {
+          ...results[base],
+          status: member.status,
+          test_id: member.test_id,
+          source_execution_id: member.source_execution_id,
+        };
       }
     }
     if (evt.type === "testrun_authored_member_end") {
@@ -52,9 +63,26 @@ function loadResults(file) {
       results[base] = results[base] || {};
       results[base].status = results[base].status || evt.status;
       results[base].duration_s = evt.duration_s;
+      results[base].test_id = results[base].test_id || evt.test_id;
     }
   }
   return results;
+}
+
+function findSharableLink(testId, sourceExecutionId) {
+  if (!testId || !sourceExecutionId) return null;
+  const pack = path.join(evidenceDir, `${sourceExecutionId}.evidence`);
+  if (!fs.existsSync(pack)) return null;
+  try {
+    const yaml = execFileSync("unzip", ["-p", pack, `tests/${testId}/result.yaml`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const m = yaml.match(/sharable_link:\s*(\S+)/);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
 }
 
 function badge(status) {
@@ -63,6 +91,13 @@ function badge(status) {
   if (status === "broken") return "🟠 BROKEN";
   if (!status) return "⚪ NOT RUN";
   return `⚪ ${status.toUpperCase()}`;
+}
+
+function ucBadge(provenCount, totalCount) {
+  if (totalCount === 0) return "⚪ NO ACs";
+  if (provenCount === totalCount) return "🟢 FULLY PROVEN";
+  if (provenCount === 0) return "🔴 NOT PROVEN";
+  return "🟠 PARTIALLY PROVEN";
 }
 
 function main() {
@@ -86,43 +121,82 @@ function main() {
   log("");
 
   let totalAcs = 0;
+  let totalProvenAcs = 0;
   let totalTests = 0;
   let totalPassed = 0;
   let totalFailed = 0;
   let totalNotRun = 0;
+  const ucRollup = [];
 
   for (const uc of manifest.use_cases) {
+    // First pass: resolve every test's result + which ACs it proves.
+    const ucTests = uc.tests.map((tid) => {
+      const t = testsById[tid];
+      if (!t) return { tid, missing: true };
+      const r = results[t.file] || {};
+      const link = findSharableLink(r.test_id, r.source_execution_id);
+      return { tid, t, r, status: r.status, link };
+    });
+
+    const provenAcs = new Set();
+    for (const entry of ucTests) {
+      if (entry.status === "passed" && entry.t) {
+        entry.t.verifies.forEach((ac) => provenAcs.add(ac));
+      }
+    }
+    const acTotal = uc.acceptance_criteria.length;
+    const acProven = uc.acceptance_criteria.filter((ac) => provenAcs.has(ac.id)).length;
+    const testsPassed = ucTests.filter((e) => e.status === "passed").length;
+    const testsTotal = ucTests.length;
+
+    ucRollup.push({ id: uc.id, title: uc.title, acTotal, acProven, testsPassed, testsTotal });
+
     log(`## ${uc.id.toUpperCase()} — ${uc.title}`);
     log(`*Business use case: ${uc.business_use_case}*`);
     log("");
-    log(`**Acceptance criteria (${uc.acceptance_criteria.length}):**`);
+    log(`**Result: ${ucBadge(acProven, acTotal)}** — ${acProven}/${acTotal} ACs proven, ${testsPassed}/${testsTotal} tests passed`);
+    log("");
+    log(`**Acceptance criteria (${acTotal}):**`);
     for (const ac of uc.acceptance_criteria) {
-      log(`- \`${ac.id}\` ${ac.title}`);
+      const proven = provenAcs.has(ac.id);
+      log(`- ${proven ? "✅" : "⬜"} \`${ac.id}\` ${ac.title}`);
     }
-    totalAcs += uc.acceptance_criteria.length;
+    totalAcs += acTotal;
+    totalProvenAcs += acProven;
     log("");
-    log(`**Tests (${uc.tests.length}):**`);
+    log(`**Tests (${testsTotal}):**`);
     log("");
-    log(`| Test | Verifies | Result |`);
-    log(`|---|---|---|`);
-    for (const tid of uc.tests) {
-      const t = testsById[tid];
+    log(`| Test | Verifies | Result | Execution |`);
+    log(`|---|---|---|---|`);
+    for (const entry of ucTests) {
       totalTests++;
-      if (!t) {
-        log(`| \`${tid}\` (missing file) | — | ⚪ NOT FOUND |`);
+      if (entry.missing) {
+        log(`| \`${entry.tid}\` (missing file) | — | ⚪ NOT FOUND | — |`);
         totalNotRun++;
         continue;
       }
-      const r = results[t.file];
-      const status = r && r.status;
+      const { t, r, status, link } = entry;
       if (status === "passed") totalPassed++;
       else if (status === "failed" || status === "broken") totalFailed++;
       else totalNotRun++;
       const dur = r && r.duration_s ? ` (${r.duration_s}s)` : "";
-      log(`| **${t.title}** | ${t.verifies.join(", ") || "—"} | ${badge(status)}${dur} |`);
+      const execLink = link ? `[▶ View execution](${link})` : "—";
+      log(`| **${t.title}** | ${t.verifies.join(", ") || "—"} | ${badge(status)}${dur} | ${execLink} |`);
     }
     log("");
   }
+
+  log(`## Coverage`);
+  log("");
+  log(`| Use case | ACs designed | ACs proven | Coverage | Tests passed |`);
+  log(`|---|---|---|---|---|`);
+  for (const r of ucRollup) {
+    const pct = r.acTotal ? Math.round((r.acProven / r.acTotal) * 100) : 0;
+    log(`| ${r.id.toUpperCase()} — ${r.title} | ${r.acTotal} | ${r.acProven} | ${pct}% | ${r.testsPassed}/${r.testsTotal} |`);
+  }
+  const overallPct = totalAcs ? Math.round((totalProvenAcs / totalAcs) * 100) : 0;
+  log(`| **Overall** | **${totalAcs}** | **${totalProvenAcs}** | **${overallPct}%** | **${totalPassed}/${totalTests}** |`);
+  log("");
 
   log(`## Summary`);
   log("");
@@ -130,12 +204,13 @@ function main() {
   log(`|---|---|`);
   log(`| Use cases | ${manifest.use_cases.length} |`);
   log(`| Acceptance criteria designed | ${totalAcs} |`);
+  log(`| Acceptance criteria proven this run | ${totalProvenAcs} (${overallPct}%) |`);
   log(`| Tests designed | ${totalTests} |`);
   log(`| Passed this run | ${totalPassed} |`);
   log(`| Failed this run | ${totalFailed} |`);
   log(`| Not run this trigger | ${totalNotRun} |`);
   log("");
-  log(`This pipeline ran the kane-cli assurance flow: **Discover → Extract → Review → Design Tests → Execute → Collect Evidence → Generate Assurance Results → Identify Proven vs Owed.** The table above is the "Proven vs Owed" result for this execution — a failed row is either a real product defect or a test that needs re-authoring against the live UI, both surfaced in the evidence pack for the matching test.`);
+  log(`This pipeline ran the kane-cli assurance flow: **Discover → Extract → Review → Design Tests → Execute → Collect Evidence → Generate Assurance Results → Identify Proven vs Owed.** An AC counts as "proven" when at least one of its verifying tests passed this run. A failed row is either a real product defect or a test that needs re-authoring against the live UI — click **View execution** on that row for the full step-by-step run (screenshots, console/network logs, root-cause analysis) in the TestmuAI Test Manager dashboard.`);
 
   const report = lines.join("\n");
   process.stdout.write(report + "\n");
